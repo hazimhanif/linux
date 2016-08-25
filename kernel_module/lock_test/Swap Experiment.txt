@@ -1,0 +1,233 @@
+===========================SWAP EXPERIMENT======================
+Sys info:
+-Ubuntu Server 14.04.3 LTS 
+-Kernel 3.19.0-25-generic
+-x86-64 bit
+-RAM 2GB
+-Stress test program has been edited to increase the size.
+
+======Before inserting lock_test module.
+
+	> free -mt
+
+		             total       used       free     shared    buffers     cached
+		Mem:          1984        187       1797          1          4         37
+		-/+ buffers/cache:        146       1838
+		Swap:         2043          0       2043
+		Total:        4028        187       3841
+
+
+	> cat /proc/$(pgrep mysql)/status | grep Vm*
+
+		VmPeak:	  624136 kB
+		VmSize:	  558600 kB
+		VmLck:	       0 kB
+		VmPin:	       0 kB
+		VmHWM:	   48772 kB
+		VmRSS:	   48756 kB
+		VmData:	  513300 kB
+		VmStk:	     136 kB
+		VmExe:	   10388 kB
+		VmLib:	    4452 kB
+		VmPTE:	     248 kB
+		VmSwap:	       0 kB
+
+Now, execute stress_test program. Checking the swap.
+
+	> cat /proc/$(pgrep mysql)/status | grep Vm*
+
+		VmPeak:	  624136 kB
+		VmSize:	  558600 kB
+		VmLck:	       0 kB
+		VmPin:	       0 kB
+		VmHWM:	   50288 kB
+		VmRSS:	    6116 kB
+		VmData:	  513300 kB
+		VmStk:	     136 kB
+		VmExe:	   10388 kB
+		VmLib:	    4452 kB
+		VmPTE:	     256 kB
+		VmSwap:	   36204 kB				 <<----36.204 MB of swap occured on mysqld
+
+	> cat /proc/$(pgrep mysql)/smaps | grep Swap
+
+		.....Various swap values(too long to display). It means that swapping occured.
+
+
+	> free -mt
+
+		             total       used       free     shared    buffers     cached
+		Mem:          1984        107       1876          0          2         11
+		-/+ buffers/cache:         94       1890
+		Swap:         2043         59       1984   <-------- ~59MB of swap used after execution of stress test program.
+		Total:        4028        167       3861
+
+======Inserting the lock_test module.
+
+Clear all the swap space.
+Restart mysql.
+
+	> free -mt
+
+		             total       used       free     shared    buffers     cached
+		Mem:          1984        191       1793          1          4         38
+		-/+ buffers/cache:        148       1836
+		Swap:         2043          0       2043
+		Total:        4028        191       3837
+
+	> cat /proc/$(pgrep mysql)/status | grep Vm*
+
+		VmPeak:	  624136 kB
+		VmSize:	  558600 kB
+		VmLck:	       0 kB
+		VmPin:	       0 kB
+		VmHWM:	   56176 kB
+		VmRSS:	   56176 kB
+		VmData:	  513300 kB
+		VmStk:	     136 kB
+		VmExe:	   10388 kB
+		VmLib:	    4452 kB
+		VmPTE:	     252 kB
+		VmSwap:	       0 kB
+
+Now, insert the lock_test module.
+
+	> insmod lock_test.ko
+	> tail -n 12 /var/log/kern.log 
+
+		Aug 13 18:58:44 ubuntu1 kernel: [ 2214.158994] Process name:mysqld, PID:3902
+		Aug 13 18:58:44 ubuntu1 kernel: [ 2214.158996] Start area:0x7f3300000000 , End area:0x7f33000a1000
+		Aug 13 18:58:44 ubuntu1 kernel: [ 2214.158997] VM Total:139650 ,VM Locked:0, Pinned VM:0
+		Aug 13 18:58:44 ubuntu1 kernel: [ 2214.158998] MCL_FUTURE:2
+		Aug 13 18:58:44 ubuntu1 kernel: [ 2214.158999] MCL_CURRENT:1
+		Aug 13 18:58:44 ubuntu1 kernel: [ 2214.158999] VM_LOCKED:8192
+		Aug 13 18:58:44 ubuntu1 kernel: [ 2214.159000] DEFFLASGS:0
+		Aug 13 18:58:44 ubuntu1 kernel: [ 2214.159001] Start locking process:3902
+		Aug 13 18:58:44 ubuntu1 kernel: [ 2214.159016] Locking done!
+		Aug 13 18:58:44 ubuntu1 kernel: [ 2214.159017] VM Total:139650 ,VM Locked:139650, Pinned VM:139650
+		Aug 13 18:58:44 ubuntu1 kernel: [ 2214.159017] VM_LOCKED:8192
+		Aug 13 18:58:44 ubuntu1 kernel: [ 2214.159018] DEFFLASGS:8192
+
+	> cat /proc/$(pgrep mysql)/status | grep Vm*
+	
+		VmPeak:	  624136 kB
+		VmSize:	  558600 kB
+		VmLck:	  558600 kB    <----- VmLock value.
+		VmPin:	  558600 kB	   <----- VmPin	value.
+		VmHWM:	   53920 kB
+		VmRSS:	   53920 kB
+		VmData:	  513300 kB
+		VmStk:	     136 kB
+		VmExe:	   10388 kB
+		VmLib:	    4452 kB
+		VmPTE:	     240 kB
+		VmSwap:	       0 kB
+
+
+Now, execute stress_test program. Checking the swap.
+
+	> cat /proc/$(pgrep mysql)/status | grep Vm*
+
+		VmPeak:	  624136 kB
+		VmSize:	  558600 kB
+		VmLck:	  558600 kB
+		VmPin:	  558600 kB
+		VmHWM:	   53920 kB
+		VmRSS:	   53920 kB
+		VmData:	  513300 kB
+		VmStk:	     136 kB
+		VmExe:	   10388 kB
+		VmLib:	    4452 kB
+		VmPTE:	     240 kB
+		VmSwap:	       0 kB   <----- This value is 0 ! 
+
+	> cat /proc/$(pgrep mysql)/smaps | grep Swap
+
+		Swap:                  0 kB
+		Swap:                  0 kB
+		Swap:                  0 kB
+		Swap:                  0 kB
+		Swap:                  0 kB
+
+		........and it goes on throughout the list. All values are 0 kB !
+
+	> free -mt
+
+		             total       used       free     shared    buffers     cached
+		Mem:          1984        155       1828          0          2         17
+		-/+ buffers/cache:        135       1849
+		Swap:         2043         27       2016  <-- 27MB of swap used.But, as from the above results, those are not from mysqld :)
+		Total:        4028        183       3845
+
+
+======Removing the lock_test module.
+
+Next, remove the lock:
+
+	> rmmod lock_test
+
+Check the logs and status:
+
+	> tail -n 6 /var/log/kern.log 
+
+		Aug 14 01:07:44 ubuntu1 kernel: [  637.555639] Unlocking process:mysqld
+		Aug 14 01:07:44 ubuntu1 kernel: [  637.555656] VM Total:139650 ,VM Locked:0, Pinned VM:0
+		Aug 14 01:07:44 ubuntu1 kernel: [  637.555657] VM_LOCKED:8192
+		Aug 14 01:07:44 ubuntu1 kernel: [  637.555658] DEFFLASGS:0
+		Aug 14 01:07:44 ubuntu1 kernel: [  637.555658] Unlocking done!
+		Aug 14 01:07:44 ubuntu1 kernel: [  637.555659] Unload module: lock_test. Goodbye!
+
+	> cat /proc/$(pgrep mysqld)/status | grep Vm*
+
+		VmPeak:	  624136 kB
+		VmSize:	  558600 kB
+		VmLck:	       0 kB
+		VmPin:	       0 kB
+		VmHWM:	   53620 kB
+		VmRSS:	   53620 kB
+		VmData:	  513300 kB
+		VmStk:	     136 kB
+		VmExe:	   10388 kB
+		VmLib:	    4452 kB
+		VmPTE:	     244 kB
+		VmSwap:	       0 kB
+
+Execute stress test program. And check swap status.
+
+	> cat /proc/$(pgrep mysqld)/status | grep Vm*
+
+		VmPeak:	  624136 kB
+		VmSize:	  558600 kB
+		VmLck:	       0 kB
+		VmPin:	       0 kB
+		VmHWM:	   53620 kB
+		VmRSS:	   37172 kB
+		VmData:	  513300 kB
+		VmStk:	     136 kB
+		VmExe:	   10388 kB
+		VmLib:	    4452 kB
+		VmPTE:	     244 kB
+		VmSwap:	   16448 kB		<---- Yep. As expected. Swap is back in business !
+
+
+	> cat /proc/$(pgrep mysqld)/smaps | grep Swap
+
+		Swap:                 64 kB
+		Swap:                  0 kB
+		Swap:              10240 kB
+		Swap:                  0 kB
+		Swap:                  0 kB
+		Swap:               6044 kB
+		Swap:                  0 kB
+
+		........and the list goes on.  Yep, we can see also in here that swap is back in town ! 
+
+
+Conclusion:
+-As from the testing above, locking is a success (i think so). 
+-Unlocking when removing the module is also a success (i think so).
+-Experiment has been tested on 2 processes which are “mysqld” & “nginx”.
+-Both process behave in the same way basically.
+-Locking and Unlocking works in both process.
+
+===================EXPERIMENT FINISHED=============================
